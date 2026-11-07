@@ -1,4 +1,5 @@
 from django.db import models
+
 STATIC_CATEGORIES_CHOICES = [
     ('Mortgage & Rent', 'Mortgage & Rent'),
     ('Utilities', 'Utilities'),
@@ -10,16 +11,6 @@ STATIC_CATEGORIES_CHOICES = [
     ('Television', 'Television'),
 ]
 
-# Create your models here.
-class Static_data(models.Model):
-    description = models.CharField(max_length=15)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    date = models.DateField()
-    category = models.CharField(max_length=22,choices=STATIC_CATEGORIES_CHOICES)
-    month = models.CharField(max_length=15)
-
-    def __str__(self):
-        return self.name
 DYNAMIC_CATEGORIES_CHOICES = [
     ('Groceries', 'Groceries'),
     ('Restaurants', 'Restaurants'),
@@ -34,28 +25,48 @@ DYNAMIC_CATEGORIES_CHOICES = [
     ('Food & Dining', 'Food & Dining'),
     ('Entertainment', 'Entertainment')
 ]
-class Dynamic_data(models.Model):
-    description = models.CharField(max_length=15)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    date = models.DateField()
-    category = models.CharField(max_length=30,choices=DYNAMIC_CATEGORIES_CHOICES)
-    month = models.CharField(max_length=15)
 
-    def __str__(self):
-        return self.description
 INCOME_CATEGORIES_CHOICES = [
     ('Income', 'Income')
 ]
 
-class Salary_data(models.Model):
-    description = models.CharField(max_length=15)
+class Static_data(models.Model):
+    description = models.CharField(max_length=150)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     date = models.DateField()
-    category = models.CharField(max_length=30, choices=INCOME_CATEGORIES_CHOICES)
-    month = models.CharField(max_length=15)
+    category = models.CharField(max_length=50, choices=STATIC_CATEGORIES_CHOICES)
+    month = models.CharField(max_length=20)
 
     def __str__(self):
         return self.description
+
+
+class Dynamic_data(models.Model):
+    description = models.CharField(max_length=150)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    date = models.DateField()
+    category = models.CharField(max_length=50, choices=DYNAMIC_CATEGORIES_CHOICES)
+    month = models.CharField(max_length=20)
+
+    def __str__(self):
+        return self.description
+
+
+class Salary_data(models.Model):
+    description = models.CharField(max_length=150)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    date = models.DateField()
+    category = models.CharField(max_length=50, choices=INCOME_CATEGORIES_CHOICES)
+    month = models.CharField(max_length=20)
+
+    def __str__(self):
+        return self.description
+
+
 class target_model(models.Model):
     budget = models.DecimalField(max_digits=10, decimal_places=2)
-    month = models.IntegerField()
+    timeline_months = models.IntegerField(default=12)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"${self.budget} in {self.timeline_months} months"

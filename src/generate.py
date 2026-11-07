@@ -300,3 +300,11 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
         },
         "tradeoffs": ai_plan
     }
+if __name__ == "__main__":
+    import json
+   
+    print("Evaluating financial plan...")
+    result = evaluate_financial_plan(budget=35000.0, months=12)
+    
+   
+    print(json.dumps(result, indent=4))
