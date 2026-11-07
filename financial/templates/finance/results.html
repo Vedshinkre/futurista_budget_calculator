@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Financial Blueprint | Futurista</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #090d16; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen py-10 px-4">
+
+    <div class="max-w-5xl mx-auto space-y-8">
+        
+        <!-- Top Nav / Back Button -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800/80 pb-6">
+            <div>
+                <span class="text-xs uppercase font-extrabold tracking-widest text-indigo-400">Analysis & Recommendation</span>
+                <h1 class="text-3xl font-extrabold text-white tracking-tight mt-1">Financial Blueprint</h1>
+            </div>
+            <a href="{% url 'finance_form' %}"
+               class="px-4 py-2.5 text-xs font-semibold rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 transition-all hover:border-slate-600">
+                ← Recalculate New Goal
+            </a>
+        </div>
+
+        <!-- 1. Historical Baseline Strip -->
+        <div>
+            <h3 class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-3">Historical Monthly Baseline</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+                <div class="bg-slate-900/60 border border-slate-800 p-3.5 rounded-xl">
+                    <span class="text-xs text-slate-400 block mb-1">Avg Income</span>
+                    <span class="text-emerald-400 font-bold text-base md:text-lg">${{ baseline.income }}</span>
+                </div>
+                <div class="bg-slate-900/60 border border-slate-800 p-3.5 rounded-xl">
+                    <span class="text-xs text-slate-400 block mb-1">Static Bills</span>
+                    <span class="text-rose-400 font-bold text-base md:text-lg">${{ baseline.static }}</span>
+                </div>
+                <div class="bg-slate-900/60 border border-slate-800 p-3.5 rounded-xl">
+                    <span class="text-xs text-slate-400 block mb-1">Dynamic Spend</span>
+                    <span class="text-amber-400 font-bold text-base md:text-lg">${{ baseline.dynamic }}</span>
+                </div>
+                <div class="bg-slate-900/60 border border-slate-800 p-3.5 rounded-xl">
+                    <span class="text-xs text-slate-400 block mb-1">5% Sinking Fund</span>
+                    <span class="text-cyan-400 font-bold text-base md:text-lg">${{ baseline.sinking_fund }}</span>
+                </div>
+                <div class="bg-slate-900/60 border border-slate-800 p-3.5 rounded-xl col-span-2 md:col-span-1">
+                    <span class="text-xs text-slate-400 block mb-1">Free Buffer</span>
+                    <span class="text-indigo-400 font-bold text-base md:text-lg">${{ baseline.buffer }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Goal & Feasibility Banner -->
+        <div class="p-6 md:p-8 rounded-2xl border backdrop-blur-xl shadow-2xl {% if result_data.status == 'effortless' %}border-emerald-500/40 bg-emerald-950/20{% elif result_data.status == 'achievable' %}border-indigo-500/40 bg-indigo-950/20{% else %}border-amber-500/40 bg-amber-950/20{% endif %}">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                    <span class="text-xs uppercase font-extrabold tracking-widest {% if result_data.status == 'effortless' %}text-emerald-400{% elif result_data.status == 'achievable' %}text-indigo-400{% else %}text-amber-400{% endif %}">
+                        Feasibility Assessment
+                    </span>
+                    <div class="flex items-baseline gap-3 mt-2">
+                        <span class="text-5xl font-black text-white">{{ result_data.feasibility_score }}%</span>
+                        <span class="text-slate-300 text-sm">
+                            Target: <strong class="text-white">${{ result_data.goal_budget|floatformat:2 }}</strong> in <strong class="text-white">{{ result_data.timeline }} months</strong>
+                        </span>
+                    </div>
+                    <p class="text-slate-300 text-sm mt-2">
+                        Required Allocation: <span class="text-white font-semibold">${{ result_data.required_monthly }}/month</span>
+                        {% if result_data.monthly_deficit > 0 %}
+                            • Monthly Shortfall: <span class="text-rose-400 font-semibold">${{ result_data.monthly_deficit }}/month</span>
+                        {% endif %}
+                    </p>
+                </div>
+
+                <div>
+                    <span class="inline-block px-4 py-2 rounded-full text-xs font-bold tracking-wide {% if result_data.status == 'effortless' %}bg-emerald-500/20 text-emerald-300 border border-emerald-500/30{% elif result_data.status == 'achievable' %}bg-indigo-500/20 text-indigo-300 border border-indigo-500/30{% else %}bg-amber-500/20 text-amber-300 border border-amber-500/30{% endif %}">
+                        {% if result_data.status == 'effortless' %}Status: 100% Buffer Funded
+                        {% elif result_data.status == 'achievable' %}Status: Achievable with Habit Tweaks
+                        {% else %}Status: Recalibrated (High Risk)
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. EFFORTLESS VIEW: Displayed when AI is bypassed -->
+        {% if result_data.status == 'effortless' %}
+            <div class="bg-slate-900/70 border border-emerald-500/30 rounded-2xl p-8 text-center space-y-4 shadow-xl">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-3xl">
+                    ✓
+                </div>
+                <h3 class="text-2xl font-bold text-white">No Lifestyle Adjustments Required</h3>
+                <p class="text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">
+                    {{ result_data.message }}
+                </p>
+                <div class="pt-2 text-xs text-slate-400">
+                    Monthly required: <span class="text-emerald-400 font-semibold">${{ result_data.required_monthly }}</span> | Monthly surplus available: <span class="text-indigo-400 font-semibold">${{ baseline.buffer }}</span>
+                </div>
+            </div>
+        {% endif %}
+
+        <!-- 4. RECALIBRATED BUDGET TIERS: Displayed only when Feasibility < 65% -->
+        {% if result_data.recalibrated %}
+            <div class="space-y-4">
+                <div>
+                    <h3 class="text-lg font-bold text-white">Budget Recalibration Options</h3>
+                    <p class="text-slate-400 text-xs">Your original goal required cutting &gt;35% of lifestyle spending. Select an achievable alternative:</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <!-- Zero-Sacrifice -->
+                    <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
+                        <div>
+                            <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-1">Zero-Sacrifice</span>
+                            <div class="text-2xl font-black text-white">${{ result_data.recalibrated.zero_sacrifice }}</div>
+                            <span class="text-[11px] text-emerald-400 font-medium">100% Feasibility</span>
+                            <p class="text-xs text-slate-400 mt-3 leading-relaxed">Fully covered by current buffer. Requires <strong>$0</strong> cuts.</p>
+                        </div>
+                    </div>
+
+                    <!-- Recommended 70% Target -->
+                    <div class="bg-indigo-950/30 border-2 border-indigo-500/60 p-5 rounded-2xl flex flex-col justify-between shadow-lg shadow-indigo-500/10 relative">
+                        <span class="absolute -top-2.5 right-4 bg-indigo-500 text-white text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full">
+                            Optimal
+                        </span>
+                        <div>
+                            <span class="text-xs font-bold text-indigo-400 uppercase tracking-wider block mb-1">70% Balanced</span>
+                            <div class="text-2xl font-black text-white">${{ result_data.recalibrated.balanced_70 }}</div>
+                            <span class="text-[11px] text-indigo-300 font-medium">70.0% Feasibility</span>
+                            <p class="text-xs text-slate-300 mt-3 leading-relaxed">Sustainable 30% dynamic cut (~${{ result_data.tradeoffs.deficit }}/mo).</p>
+                        </div>
+                    </div>
+
+                    <!-- Max Safe Cap -->
+                    <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
+                        <div>
+                            <span class="text-xs font-bold text-amber-400 uppercase tracking-wider block mb-1">Max Safe Cap</span>
+                            <div class="text-2xl font-black text-white">${{ result_data.recalibrated.max_safe }}</div>
+                            <span class="text-[11px] text-amber-400 font-medium">65.0% Feasibility</span>
+                            <p class="text-xs text-slate-400 mt-3 leading-relaxed">Upper boundary (35% cut) before lifestyle fatigue.</p>
+                        </div>
+                    </div>
+
+                    <!-- Timeline Extension -->
+                    <div class="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
+                        <div>
+                            <span class="text-xs font-bold text-cyan-400 uppercase tracking-wider block mb-1">Extend Duration</span>
+                            <div class="text-2xl font-black text-white">{{ result_data.recalibrated.extended_months }} Months</div>
+                            <span class="text-[11px] text-cyan-400 font-medium">Full ${{ result_data.goal_budget|floatformat:0 }} Goal</span>
+                            <p class="text-xs text-slate-400 mt-3 leading-relaxed">Keep original price tag by saving across a longer window.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+        <!-- 5. AI TRADE-OFFS: Displayed only when an AI payload exists -->
+        {% if result_data.tradeoffs %}
+            <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 md:p-8 space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center border-b border-slate-800 pb-5 gap-2">
+                    <div>
+                        <h3 class="text-xl font-extrabold text-white">AI Behavioral Trade-Off Plan</h3>
+                        <p class="text-slate-400 text-xs mt-1">Specific habits and merchant categories to adjust to stay on schedule.</p>
+                    </div>
+                    <div class="bg-indigo-500/10 border border-indigo-500/30 px-3.5 py-1.5 rounded-lg text-right">
+                        <span class="text-[11px] text-slate-400 block uppercase font-medium">Total Monthly Savings</span>
+                        <span class="text-indigo-400 font-black text-base">${{ result_data.tradeoffs.total_planned_savings }}/mo</span>
+                    </div>
+                </div>
+
+                <!-- Category Swaps Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {% for cat in result_data.tradeoffs.top_categories %}
+                        <div class="bg-slate-950/70 border border-slate-800/90 rounded-xl p-5 space-y-3.5">
+                            <div class="flex justify-between items-start gap-3">
+                                <div>
+                                    <h4 class="font-bold text-white text-base">{{ cat.category }}</h4>
+                                    <span class="text-xs text-slate-400">Current average: ${{ cat.current_monthly_spend }}/mo</span>
+                                </div>
+                                <span class="px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-300 font-bold text-xs border border-indigo-500/30 whitespace-nowrap">
+                                    Cut ${{ cat.recommended_cut }}/mo
+                                </span>
+                            </div>
+
+                            <p class="text-xs text-indigo-300/80 font-medium italic border-l-2 border-indigo-500/40 pl-2.5">
+                                {{ cat.quick_win_rationale }}
+                            </p>
+
+                            <div class="space-y-1.5 pt-1">
+                                <span class="text-[11px] uppercase font-bold text-slate-400 tracking-wider block">Actionable Swaps:</span>
+                                <ul class="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+                                    {% for swap in cat.actionable_swaps %}
+                                        <li>{{ swap }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <!-- AI Coach Statement -->
+                <div class="p-4 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-900 border border-indigo-500/20 flex items-start gap-3.5">
+                    <span class="text-xl">💡</span>
+                    <div>
+                        <span class="text-xs uppercase font-extrabold tracking-wider text-indigo-400 block">AI Coach Advice</span>
+                        <p class="text-xs text-slate-300 mt-1 leading-relaxed">{{ result_data.tradeoffs.encouragement }}</p>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+    </div>
+
+</body>
+</html>
