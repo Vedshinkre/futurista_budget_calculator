@@ -7,20 +7,88 @@ from dotenv import load_dotenv
 import pandas as pd
 from openai import OpenAI
 
-# Load environment variables (.env file in root)
+# Load environment variables (.env in project root)
 load_dotenv()
 
 BLABLADOR_API_KEY = os.getenv("BLABLADOR_API_KEY")
 BLABLADOR_BASE_URL = "https://api.blablador.fz-juelich.de/v1"
 
+# ==========================================
+# 1. Historical Baseline & Data Engine
+# ==========================================
+current_code_path = Path(__file__).resolve().parent
+project_path = current_code_path.parent
+
+data_path = project_path / "data"
+dynamic_path = data_path / "table_dynamic.csv"
+static_path = data_path / "table_static.csv"
+income_path = data_path / "table_paycheck.csv"
+
+for p in [data_path, dynamic_path, static_path, income_path]:
+    if not p.exists():
+        raise FileNotFoundError(f"Required path {p} not found.")
+
+dynamic_df = pd.read_csv(dynamic_path)
+static_df = pd.read_csv(static_path)
+income_df = pd.read_csv(income_path)
+
+# Monthly Cash Flow & Sinking Fund Engine
+monthly_income = income_df.groupby("Month")["Amount"].sum()
+monthly_static = static_df.groupby("Month")["Amount"].sum()
+monthly_dynamic = dynamic_df.groupby("Month")["Amount"].sum()
+
+monthly_summary = pd.DataFrame(
+    {
+        "income": monthly_income,
+        "static": monthly_static,
+        "dynamic": monthly_dynamic,
+    }
+).fillna(0)
+
+monthly_summary["target_sinking_fund"] = monthly_summary["income"] * 0.05
+monthly_summary["raw_surplus"] = monthly_summary["income"] - (
+    monthly_summary["static"] + monthly_summary["dynamic"]
+)
+monthly_summary["actual_sinking_fund"] = (
+    monthly_summary["raw_surplus"]
+    .clip(lower=0)
+    .combine(monthly_summary["target_sinking_fund"], min)
+)
+monthly_summary["remaining_funds"] = monthly_summary["income"] - (
+    monthly_summary["static"]
+    + monthly_summary["dynamic"]
+    + monthly_summary["actual_sinking_fund"]
+)
+
+# Exportable Historical Baselines
+total_months = len(monthly_summary)
+category_monthly_avg = (
+    (dynamic_df.groupby("Category")["Amount"].sum() / total_months)
+    .round(2)
+    .sort_values(ascending=False)
+)
+
+frequent_merchants = (
+    dynamic_df.groupby(["Category", "Description"])["Amount"]
+    .agg(total_spent="sum", frequency="count")
+    .sort_values(by="frequency", ascending=False)
+    .head(10)
+    .reset_index()
+)
+
+avg_income = float(monthly_summary["income"].mean())
+avg_static = float(monthly_summary["static"].mean())
+avg_dynamic = float(monthly_summary["dynamic"].mean())
+avg_sinking_fund = float(monthly_summary["actual_sinking_fund"].mean())
+avg_buffer = float(monthly_summary["remaining_funds"].mean())
+
 
 # ==========================================
-# 0. Structured AI Coaching Engine (JSON Mode)
+# 2. AI Coaching Engine (Blablador)
 # ==========================================
 def generate_ai_tradeoffs(deficit, category_averages, merchant_patterns, goal_price=None, months=None, is_recalibrated=False):
     """
     Calls Blablador's alias-fast model to generate trade-offs as structured JSON.
-    Uses regex extraction to avoid vLLM response_format bugs.
     """
     goal_text = f"${goal_price:,.2f} trip in {months} months" if goal_price and months else "savings goal"
 
@@ -61,7 +129,7 @@ def generate_ai_tradeoffs(deficit, category_averages, merchant_patterns, goal_pr
     system_prompt = (
         "You are an automated financial planning API engine. "
         "You must respond ONLY with a raw JSON object matching the requested schema. "
-        "Do not include any Markdown text, explanations, or code blocks outside the JSON. "
+        "Do not include Markdown explanations or conversational text outside the JSON. "
         "Never suggest cutting static bills (rent, utilities, insurance)."
     )
 
@@ -110,10 +178,8 @@ Generate a single valid JSON object strictly matching this schema:
         content = msg.content or getattr(msg, "reasoning_content", None)
 
         if not content:
-            print("[Notice] Model returned empty content. Using fallback.")
             return default_fallback
 
-        # Extract the JSON substring safely (handles markdown blocks if model adds them)
         json_match = re.search(r"\{.*\}", content, re.DOTALL)
         if json_match:
             return json.loads(json_match.group(0))
@@ -124,241 +190,123 @@ Generate a single valid JSON object strictly matching this schema:
         print(f"[Warning] Blablador JSON generation failed ({e}). Returning fallback schema.")
         return default_fallback
 
-# ==========================================
-# 1. Path Management & Data Loading
-# ==========================================
-current_code_path = Path(__file__).resolve().parent
-project_path = current_code_path.parent
-
-data_path = project_path / "data"
-dynamic_path = data_path / "table_dynamic.csv"
-static_path = data_path / "table_static.csv"
-income_path = data_path / "table_paycheck.csv"
-
-for p in [data_path, dynamic_path, static_path, income_path]:
-    if not p.exists():
-        raise FileNotFoundError(f"Path {p} not found.")
-
-dynamic_df = pd.read_csv(dynamic_path)
-static_df = pd.read_csv(static_path)
-income_df = pd.read_csv(income_path)
 
 # ==========================================
-# 2. Monthly Cash Flow & Sinking Fund Engine
+# 3. Main Django Service Function
 # ==========================================
-monthly_income = income_df.groupby("Month")["Amount"].sum()
-monthly_static = static_df.groupby("Month")["Amount"].sum()
-monthly_dynamic = dynamic_df.groupby("Month")["Amount"].sum()
+def evaluate_financial_plan(budget: float, months: int) -> dict:
+    """
+    Primary interface for Django views.
+    Takes user goal inputs and returns complete calculation + AI payload.
+    """
+    months = max(1, int(months))
+    budget = float(budget)
+    required_monthly = budget / months
 
-monthly_summary = pd.DataFrame(
-    {
-        "income": monthly_income,
-        "static": monthly_static,
-        "dynamic": monthly_dynamic,
+    baseline = {
+        "income": round(avg_income, 2),
+        "static": round(avg_static, 2),
+        "dynamic": round(avg_dynamic, 2),
+        "sinking_fund": round(avg_sinking_fund, 2),
+        "buffer": round(avg_buffer, 2)
     }
-).fillna(0)
 
-# 5% Baseline Sinking Fund Target
-monthly_summary["target_sinking_fund"] = monthly_summary["income"] * 0.05
+    # Case A: Effortless (Buffer covers required deposit)
+    if avg_buffer >= required_monthly:
+        return {
+            "status": "effortless",
+            "feasibility_score": 100.0,
+            "goal_budget": budget,
+            "timeline": months,
+            "required_monthly": round(required_monthly, 2),
+            "monthly_deficit": 0.0,
+            "baseline": baseline,
+            "message": f"You have an average buffer of ${avg_buffer:,.2f}/mo. You can fund this ${budget:,.2f} goal without altering your spending!"
+        }
 
-# Raw surplus after all living costs
-monthly_summary["raw_surplus"] = monthly_summary["income"] - (
-    monthly_summary["static"] + monthly_summary["dynamic"]
-)
-
-# Realistic deposit: cannot save negative cash, capped at target
-monthly_summary["actual_sinking_fund"] = (
-    monthly_summary["raw_surplus"]
-    .clip(lower=0)
-    .combine(monthly_summary["target_sinking_fund"], min)
-)
-
-monthly_summary["savings_shortfall"] = (
-    monthly_summary["target_sinking_fund"]
-    - monthly_summary["actual_sinking_fund"]
-)
-
-# Remaining unallocated cash buffer
-monthly_summary["remaining_funds"] = monthly_summary["income"] - (
-    monthly_summary["static"]
-    + monthly_summary["dynamic"]
-    + monthly_summary["actual_sinking_fund"]
-)
-
-# ==========================================
-# 3. Dynamic Aggregations for LLM Context
-# ==========================================
-total_months = len(monthly_summary)
-
-category_monthly_avg = (
-    (dynamic_df.groupby("Category")["Amount"].sum() / total_months)
-    .round(2)
-    .sort_values(ascending=False)
-)
-
-# Top 10 frequent merchants for behavioral pattern recognition
-frequent_merchants = (
-    dynamic_df.groupby(["Category", "Description"])["Amount"]
-    .agg(total_spent="sum", frequency="count")
-    .sort_values(by="frequency", ascending=False)
-    .head(10)
-    .reset_index()
-)
-
-# ==========================================
-# 4. User Goal & Historical Baselines
-# ==========================================
-trip_target_price = 25000.0
-months_until_trip = 12
-required_monthly = trip_target_price / months_until_trip
-
-avg_income = monthly_summary["income"].mean()
-avg_static = monthly_summary["static"].mean()
-avg_dynamic = monthly_summary["dynamic"].mean()
-avg_sinking_fund = monthly_summary["actual_sinking_fund"].mean()
-avg_buffer = monthly_summary["remaining_funds"].mean()
-
-print("=" * 55)
-print("HISTORICAL TYPICAL MONTH BASELINE")
-print("=" * 55)
-print(f"Avg Monthly Income:        ${avg_income:,.2f}")
-print(f"Avg Static Bills:          ${avg_static:,.2f}")
-print(f"Avg Dynamic Spending:      ${avg_dynamic:,.2f}")
-print(f"Avg 5% Sinking Fund Saved: ${avg_sinking_fund:,.2f}")
-print(f"Avg Remaining Buffer:      ${avg_buffer:,.2f}")
-print("=" * 55)
-
-# ==========================================
-# 5. Feasibility Evaluation & Adaptive Recalibration
-# ==========================================
-print(f"\nGOAL: ${trip_target_price:.2f} trip in {months_until_trip} months")
-print(f"Required Monthly Allocation: ${required_monthly:.2f}/month")
-
-if avg_buffer >= required_monthly:
-    feasibility_score = 100.0
-    print(f"\nFeasibility Score: {feasibility_score:.0f}% (Effortless)")
-    print(
-        f"You have an average buffer of ${avg_buffer:.2f}/mo. "
-        "You can easily afford this without altering dynamic expenses!"
-    )
-else:
+    # Deficit calculations
     deficit = required_monthly - avg_buffer
     effort_ratio = deficit / avg_dynamic
     feasibility_score = max(0.0, min(100.0, (1 - effort_ratio) * 100))
 
-    print(f"\nFeasibility Score: {feasibility_score:.1f}%")
-    print(f"Monthly Shortfall (Deficit): ${deficit:.2f}/month")
-
-    # Threshold: Effort ratio <= 0.35 means Feasibility >= 65%
+    # Case B: Achievable (Feasibility >= 65%)
     if feasibility_score >= 65.0:
-        print(f"Status: Achievable. Need to trim ${deficit:.2f}/mo from dynamic spending.")
-        print("\n" + "=" * 55)
-        print("GENERATING STRUCTURED AI TRADE-OFF JSON...")
-        print("=" * 55)
-
-        ai_recommendations = generate_ai_tradeoffs(
+        ai_plan = generate_ai_tradeoffs(
             deficit=deficit,
             category_averages=category_monthly_avg,
             merchant_patterns=frequent_merchants,
-            goal_price=trip_target_price,
-            months=months_until_trip,
+            goal_price=budget,
+            months=months,
             is_recalibrated=False
         )
-
-        response_payload = {
+        return {
             "status": "achievable",
             "feasibility_score": round(feasibility_score, 1),
-            "original_goal": {
-                "budget": trip_target_price,
-                "months": months_until_trip,
-                "monthly_required": round(required_monthly, 2),
-                "monthly_deficit": round(deficit, 2)
-            },
-            "tradeoffs": ai_recommendations
-        }
-        print(json.dumps(response_payload, indent=2))
-
-    else:
-        # LOW FEASIBILITY / HIGH RISK (< 65% Score): Generate Adaptive Options
-        print("Status: Low Feasibility / High Risk (Requires cutting > 35% of lifestyle).")
-
-        # 1. Effortless / Zero-Sacrifice Budget (Deficit = 0, 100% Feasibility)
-        zero_sacrifice_monthly = max(0.0, avg_buffer)
-        zero_sacrifice_budget = zero_sacrifice_monthly * months_until_trip
-
-        # 2. Recommended Sustainable Target Budget (70% Feasibility -> 30% Dynamic Cut)
-        target_70_cut = 0.30 * avg_dynamic
-        target_70_monthly = avg_buffer + target_70_cut
-        target_70_budget = target_70_monthly * months_until_trip
-
-        # 3. Maximum Safe Ceiling (65% Feasibility -> 35% Dynamic Cut Max Safe Limit)
-        max_safe_cut = 0.35 * avg_dynamic
-        max_safe_monthly = avg_buffer + max_safe_cut
-        max_safe_budget = max_safe_monthly * months_until_trip
-
-        # 4. Timeline Extension to afford the original $18,000 without exceeding safe cuts
-        extended_months_needed = math.ceil(trip_target_price / max_safe_monthly)
-
-        print("\n" + "=" * 55)
-        print("RECALIBRATING BUDGET RECOMMENDATIONS...")
-        print("=" * 55)
-        print(f"• Zero-Sacrifice Budget (0% cuts, Deficit $0): ${zero_sacrifice_budget:,.2f}")
-        print(f"• Recommended 70% Feasible Budget:           ${target_70_budget:,.2f}")
-        print(f"• Max Safe Ceiling Budget:                   ${max_safe_budget:,.2f}")
-        print(f"• Or extend timeline to {extended_months_needed} months to hit original ${trip_target_price:,.2f}")
-
-        # Generate habit tweaks scaled to the realistic 70% budget target
-        ai_recommendations = generate_ai_tradeoffs(
-            deficit=target_70_cut,
-            category_averages=category_monthly_avg,
-            merchant_patterns=frequent_merchants,
-            goal_price=target_70_budget,
-            months=months_until_trip,
-            is_recalibrated=True
-        )
-
-        response_payload = {
-            "status": "low_feasibility_recalibrated",
-            "original_feasibility_score": round(feasibility_score, 1),
-            "original_goal": {
-                "budget": trip_target_price,
-                "months": months_until_trip,
-                "monthly_required": round(required_monthly, 2),
-                "monthly_deficit": round(deficit, 2)
-            },
-            "recalibrated_options": {
-                "zero_sacrifice_budget": {
-                    "budget": round(zero_sacrifice_budget, 2),
-                    "monthly_allocation": round(zero_sacrifice_monthly, 2),
-                    "monthly_lifestyle_cut": 0.0,
-                    "feasibility": 100.0,
-                    "description": "Zero lifestyle changes. 100% funded by existing cash buffer."
-                },
-                "recommended_balanced_budget": {
-                    "budget": round(target_70_budget, 2),
-                    "monthly_allocation": round(target_70_monthly, 2),
-                    "monthly_lifestyle_cut": round(target_70_cut, 2),
-                    "feasibility": 70.0,
-                    "description": "Sustainable 30% trim on discretionary spending."
-                },
-                "max_safe_budget": {
-                    "budget": round(max_safe_budget, 2),
-                    "monthly_allocation": round(max_safe_monthly, 2),
-                    "monthly_lifestyle_cut": round(max_safe_cut, 2),
-                    "feasibility": 65.0,
-                    "description": "Maximum safe ceiling before lifestyle strain."
-                },
-                "timeline_extension_option": {
-                    "target_budget": trip_target_price,
-                    "required_months": extended_months_needed,
-                    "monthly_allocation": round(max_safe_monthly, 2),
-                    "description": f"Keep the ${trip_target_price:,.0f} goal by extending saving duration to {extended_months_needed} months."
-                }
-            },
-            "tradeoffs_for_recommended_budget": ai_recommendations
+            "goal_budget": budget,
+            "timeline": months,
+            "required_monthly": round(required_monthly, 2),
+            "monthly_deficit": round(deficit, 2),
+            "baseline": baseline,
+            "tradeoffs": ai_plan
         }
 
-        print("\n" + "=" * 55)
-        print("STRUCTURED FRONTEND PAYLOAD:")
-        print("=" * 55)
-        print(json.dumps(response_payload, indent=2))
+    # Case C: Low Feasibility (< 65%) -> Recalibrate
+    zero_sacrifice_budget = avg_buffer * months
+    target_70_cut = 0.30 * avg_dynamic
+    target_70_budget = (avg_buffer + target_70_cut) * months
+
+    max_safe_cut = 0.35 * avg_dynamic
+    max_safe_monthly = avg_buffer + max_safe_cut
+    max_safe_budget = max_safe_monthly * months
+
+    extended_months = math.ceil(budget / max_safe_monthly)
+
+    ai_plan = generate_ai_tradeoffs(
+        deficit=target_70_cut,
+        category_averages=category_monthly_avg,
+        merchant_patterns=frequent_merchants,
+        goal_price=target_70_budget,
+        months=months,
+        is_recalibrated=True
+    )
+
+    return {
+        "status": "low_feasibility",
+        "feasibility_score": round(feasibility_score, 1),
+        "goal_budget": budget,
+        "timeline": months,
+        "required_monthly": round(required_monthly, 2),
+        "monthly_deficit": round(deficit, 2),
+        "baseline": baseline,
+        "recalibrated": {
+            "zero_sacrifice": round(zero_sacrifice_budget, 2),
+            "balanced_70": round(target_70_budget, 2),
+            "max_safe": round(max_safe_budget, 2),
+            "extended_months": extended_months
+        },
+        "tradeoffs": ai_plan
+    }
+
+
+# ==========================================
+# 4. CLI Standalone Runner
+# ==========================================
+if __name__ == "__main__":
+    # Runs ONLY when executing `python -m src.generate` directly
+    test_budget = 25000.0
+    test_months = 12
+
+    print("=" * 55)
+    print("HISTORICAL TYPICAL MONTH BASELINE")
+    print("=" * 55)
+    print(f"Avg Monthly Income:        ${avg_income:,.2f}")
+    print(f"Avg Static Bills:          ${avg_static:,.2f}")
+    print(f"Avg Dynamic Spending:      ${avg_dynamic:,.2f}")
+    print(f"Avg 5% Sinking Fund Saved: ${avg_sinking_fund:,.2f}")
+    print(f"Avg Remaining Buffer:      ${avg_buffer:,.2f}")
+    print("=" * 55)
+    print(f"\nEvaluating Goal: ${test_budget:,.2f} in {test_months} months...")
+
+    result = evaluate_financial_plan(budget=test_budget, months=test_months)
+    print("\nRESULT PAYLOAD:")
+    print(json.dumps(result, indent=2))
