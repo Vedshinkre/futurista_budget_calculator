@@ -7,89 +7,107 @@ from dotenv import load_dotenv
 import pandas as pd
 from openai import OpenAI
 
-# Load environment variables (.env in project root)
 load_dotenv()
 
 BLABLADOR_API_KEY = os.getenv("BLABLADOR_API_KEY")
 BLABLADOR_BASE_URL = "https://api.blablador.fz-juelich.de/v1"
 
+# Ensure Django is initialized if run independently
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "hackathon_project.settings")
+import django
+try:
+    django.setup()
+except Exception:
+    pass
+
+from financial.models import Static_data, Dynamic_data, Salary_data
+
+
 # ==========================================
-# 1. Historical Baseline & Data Engine
+# 1. Dynamic Data Fetcher (From SQLite Database)
 # ==========================================
-current_code_path = Path(__file__).resolve().parent
-project_path = current_code_path.parent
+def get_live_financial_summary():
+    """
+    Pulls real-time data directly from Django models.
+    Converts Decimal values to float and groups by Month.
+    """
+    dyn_records = list(Dynamic_data.objects.all().values("date", "description", "amount", "category", "month"))
+    stat_records = list(Static_data.objects.all().values("date", "description", "amount", "category", "month"))
+    inc_records = list(Salary_data.objects.all().values("date", "description", "amount", "category", "month"))
 
-data_path = project_path / "data"
-dynamic_path = data_path / "table_dynamic.csv"
-static_path = data_path / "table_static.csv"
-income_path = data_path / "table_paycheck.csv"
+    dynamic_df = pd.DataFrame(dyn_records)
+    static_df = pd.DataFrame(stat_records)
+    income_df = pd.DataFrame(inc_records)
 
-for p in [data_path, dynamic_path, static_path, income_path]:
-    if not p.exists():
-        raise FileNotFoundError(f"Required path {p} not found.")
+    # Standardize column types
+    for df in [dynamic_df, static_df, income_df]:
+        if not df.empty and "amount" in df.columns:
+            df["amount"] = df["amount"].astype(float)
 
-dynamic_df = pd.read_csv(dynamic_path)
-static_df = pd.read_csv(static_path)
-income_df = pd.read_csv(income_path)
+    # Monthly aggregations
+    monthly_income = income_df.groupby("month")["amount"].sum() if not income_df.empty else pd.Series(dtype=float)
+    monthly_static = static_df.groupby("month")["amount"].sum() if not static_df.empty else pd.Series(dtype=float)
+    monthly_dynamic = dynamic_df.groupby("month")["amount"].sum() if not dynamic_df.empty else pd.Series(dtype=float)
 
-# Monthly Cash Flow & Sinking Fund Engine
-monthly_income = income_df.groupby("Month")["Amount"].sum()
-monthly_static = static_df.groupby("Month")["Amount"].sum()
-monthly_dynamic = dynamic_df.groupby("Month")["Amount"].sum()
-
-monthly_summary = pd.DataFrame(
-    {
+    monthly_summary = pd.DataFrame({
         "income": monthly_income,
         "static": monthly_static,
         "dynamic": monthly_dynamic,
+    }).fillna(0)
+
+    # 5% Baseline Sinking Fund Target & Unallocated Buffer
+    monthly_summary["target_sinking_fund"] = monthly_summary["income"] * 0.05
+    monthly_summary["raw_surplus"] = monthly_summary["income"] - (
+        monthly_summary["static"] + monthly_summary["dynamic"]
+    )
+    monthly_summary["actual_sinking_fund"] = (
+        monthly_summary["raw_surplus"]
+        .clip(lower=0)
+        .combine(monthly_summary["target_sinking_fund"], min)
+    )
+    monthly_summary["remaining_funds"] = monthly_summary["income"] - (
+        monthly_summary["static"]
+        + monthly_summary["dynamic"]
+        + monthly_summary["actual_sinking_fund"]
+    )
+
+    total_months = max(1, len(monthly_summary))
+
+    category_monthly_avg = (
+        (dynamic_df.groupby("category")["amount"].sum() / total_months)
+        .round(2)
+        .sort_values(ascending=False)
+    ) if not dynamic_df.empty else pd.Series(dtype=float)
+
+    frequent_merchants = (
+        dynamic_df.groupby(["category", "description"])["amount"]
+        .agg(total_spent="sum", frequency="count")
+        .sort_values(by="frequency", ascending=False)
+        .head(10)
+        .reset_index()
+    ) if not dynamic_df.empty else pd.DataFrame(columns=["category", "description", "total_spent", "frequency"])
+
+    avg_income = float(monthly_summary["income"].mean()) if not monthly_summary.empty else 0.0
+    avg_static = float(monthly_summary["static"].mean()) if not monthly_summary.empty else 0.0
+    avg_dynamic = float(monthly_summary["dynamic"].mean()) if not monthly_summary.empty else 0.0
+    avg_sinking_fund = float(monthly_summary["actual_sinking_fund"].mean()) if not monthly_summary.empty else 0.0
+    avg_buffer = float(monthly_summary["remaining_funds"].mean()) if not monthly_summary.empty else 0.0
+
+    return {
+        "avg_income": avg_income,
+        "avg_static": avg_static,
+        "avg_dynamic": avg_dynamic,
+        "avg_sinking_fund": avg_sinking_fund,
+        "avg_buffer": avg_buffer,
+        "category_monthly_avg": category_monthly_avg,
+        "frequent_merchants": frequent_merchants,
     }
-).fillna(0)
-
-monthly_summary["target_sinking_fund"] = monthly_summary["income"] * 0.05
-monthly_summary["raw_surplus"] = monthly_summary["income"] - (
-    monthly_summary["static"] + monthly_summary["dynamic"]
-)
-monthly_summary["actual_sinking_fund"] = (
-    monthly_summary["raw_surplus"]
-    .clip(lower=0)
-    .combine(monthly_summary["target_sinking_fund"], min)
-)
-monthly_summary["remaining_funds"] = monthly_summary["income"] - (
-    monthly_summary["static"]
-    + monthly_summary["dynamic"]
-    + monthly_summary["actual_sinking_fund"]
-)
-
-# Exportable Historical Baselines
-total_months = len(monthly_summary)
-category_monthly_avg = (
-    (dynamic_df.groupby("Category")["Amount"].sum() / total_months)
-    .round(2)
-    .sort_values(ascending=False)
-)
-
-frequent_merchants = (
-    dynamic_df.groupby(["Category", "Description"])["Amount"]
-    .agg(total_spent="sum", frequency="count")
-    .sort_values(by="frequency", ascending=False)
-    .head(10)
-    .reset_index()
-)
-
-avg_income = float(monthly_summary["income"].mean())
-avg_static = float(monthly_summary["static"].mean())
-avg_dynamic = float(monthly_summary["dynamic"].mean())
-avg_sinking_fund = float(monthly_summary["actual_sinking_fund"].mean())
-avg_buffer = float(monthly_summary["remaining_funds"].mean())
 
 
 # ==========================================
-# 2. AI Coaching Engine (Blablador)
+# 2. AI Coaching Engine
 # ==========================================
 def generate_ai_tradeoffs(deficit, category_averages, merchant_patterns, goal_price=None, months=None, is_recalibrated=False):
-    """
-    Calls Blablador's alias-fast model to generate trade-offs as structured JSON.
-    """
     goal_text = f"${goal_price:,.2f} trip in {months} months" if goal_price and months else "savings goal"
 
     default_fallback = {
@@ -111,13 +129,9 @@ def generate_ai_tradeoffs(deficit, category_averages, merchant_patterns, goal_pr
     }
 
     if not BLABLADOR_API_KEY:
-        print("[Notice] BLABLADOR_API_KEY missing. Using fallback JSON.")
         return default_fallback
 
-    client = OpenAI(
-        base_url=BLABLADOR_BASE_URL,
-        api_key=BLABLADOR_API_KEY
-    )
+    client = OpenAI(base_url=BLABLADOR_BASE_URL, api_key=BLABLADOR_API_KEY)
 
     context_note = (
         "Note: The user's original goal was over budget. This plan is calibrated to a realistic, "
@@ -129,9 +143,11 @@ def generate_ai_tradeoffs(deficit, category_averages, merchant_patterns, goal_pr
     system_prompt = (
         "You are an automated financial planning API engine. "
         "You must respond ONLY with a raw JSON object matching the requested schema. "
-        "Do not include Markdown explanations or conversational text outside the JSON. "
+        "Do not include Markdown explanations outside the JSON. "
         "Never suggest cutting static bills (rent, utilities, insurance)."
     )
+
+    merchants_repr = merchant_patterns[['category', 'description', 'total_spent', 'frequency']].to_string(index=False) if not merchant_patterns.empty else "No merchant data."
 
     user_prompt = f"""
 GOAL CONTEXT:
@@ -141,7 +157,7 @@ AVERAGE MONTHLY DISCRETIONARY SPENDING (BY CATEGORY):
 {category_averages.to_string()}
 
 TOP FREQUENT MERCHANTS & PATTERNS:
-{merchant_patterns[['Category', 'Description', 'total_spent', 'frequency']].to_string(index=False)}
+{merchants_repr}
 
 Generate a single valid JSON object strictly matching this schema:
 {{
@@ -192,26 +208,26 @@ Generate a single valid JSON object strictly matching this schema:
 
 
 # ==========================================
-# 3. Main Django Service Function
+# 3. Main Live Evaluation Function
 # ==========================================
 def evaluate_financial_plan(budget: float, months: int) -> dict:
-    """
-    Primary interface for Django views.
-    Takes user goal inputs and returns complete calculation + AI payload.
-    """
     months = max(1, int(months))
     budget = float(budget)
     required_monthly = budget / months
 
+    # Pull current metrics from the database
+    metrics = get_live_financial_summary()
+    avg_buffer = metrics["avg_buffer"]
+    avg_dynamic = metrics["avg_dynamic"]
+
     baseline = {
-        "income": round(avg_income, 2),
-        "static": round(avg_static, 2),
-        "dynamic": round(avg_dynamic, 2),
-        "sinking_fund": round(avg_sinking_fund, 2),
+        "income": round(metrics["avg_income"], 2),
+        "static": round(metrics["avg_static"], 2),
+        "dynamic": round(metrics["avg_dynamic"], 2),
+        "sinking_fund": round(metrics["avg_sinking_fund"], 2),
         "buffer": round(avg_buffer, 2)
     }
 
-    # Case A: Effortless (Buffer covers required deposit)
     if avg_buffer >= required_monthly:
         return {
             "status": "effortless",
@@ -224,17 +240,15 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
             "message": f"You have an average buffer of ${avg_buffer:,.2f}/mo. You can fund this ${budget:,.2f} goal without altering your spending!"
         }
 
-    # Deficit calculations
     deficit = required_monthly - avg_buffer
-    effort_ratio = deficit / avg_dynamic
+    effort_ratio = deficit / avg_dynamic if avg_dynamic > 0 else 1.0
     feasibility_score = max(0.0, min(100.0, (1 - effort_ratio) * 100))
 
-    # Case B: Achievable (Feasibility >= 65%)
     if feasibility_score >= 65.0:
         ai_plan = generate_ai_tradeoffs(
             deficit=deficit,
-            category_averages=category_monthly_avg,
-            merchant_patterns=frequent_merchants,
+            category_averages=metrics["category_monthly_avg"],
+            merchant_patterns=metrics["frequent_merchants"],
             goal_price=budget,
             months=months,
             is_recalibrated=False
@@ -250,7 +264,7 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
             "tradeoffs": ai_plan
         }
 
-    # Case C: Low Feasibility (< 65%) -> Recalibrate
+    # Low Feasibility: Recalibrate
     zero_sacrifice_budget = avg_buffer * months
     target_70_cut = 0.30 * avg_dynamic
     target_70_budget = (avg_buffer + target_70_cut) * months
@@ -259,12 +273,12 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
     max_safe_monthly = avg_buffer + max_safe_cut
     max_safe_budget = max_safe_monthly * months
 
-    extended_months = math.ceil(budget / max_safe_monthly)
+    extended_months = math.ceil(budget / max_safe_monthly) if max_safe_monthly > 0 else 0
 
     ai_plan = generate_ai_tradeoffs(
         deficit=target_70_cut,
-        category_averages=category_monthly_avg,
-        merchant_patterns=frequent_merchants,
+        category_averages=metrics["category_monthly_avg"],
+        merchant_patterns=metrics["frequent_merchants"],
         goal_price=target_70_budget,
         months=months,
         is_recalibrated=True
@@ -286,27 +300,3 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
         },
         "tradeoffs": ai_plan
     }
-
-
-# ==========================================
-# 4. CLI Standalone Runner
-# ==========================================
-if __name__ == "__main__":
-    # Runs ONLY when executing `python -m src.generate` directly
-    test_budget = 25000.0
-    test_months = 12
-
-    print("=" * 55)
-    print("HISTORICAL TYPICAL MONTH BASELINE")
-    print("=" * 55)
-    print(f"Avg Monthly Income:        ${avg_income:,.2f}")
-    print(f"Avg Static Bills:          ${avg_static:,.2f}")
-    print(f"Avg Dynamic Spending:      ${avg_dynamic:,.2f}")
-    print(f"Avg 5% Sinking Fund Saved: ${avg_sinking_fund:,.2f}")
-    print(f"Avg Remaining Buffer:      ${avg_buffer:,.2f}")
-    print("=" * 55)
-    print(f"\nEvaluating Goal: ${test_budget:,.2f} in {test_months} months...")
-
-    result = evaluate_financial_plan(budget=test_budget, months=test_months)
-    print("\nRESULT PAYLOAD:")
-    print(json.dumps(result, indent=2))
