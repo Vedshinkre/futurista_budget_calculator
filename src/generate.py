@@ -215,7 +215,6 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
     budget = float(budget)
     required_monthly = budget / months
 
-    # Pull current metrics from the database
     metrics = get_live_financial_summary()
     avg_buffer = metrics["avg_buffer"]
     avg_dynamic = metrics["avg_dynamic"]
@@ -228,6 +227,9 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
         "buffer": round(avg_buffer, 2)
     }
 
+    # ==========================================
+    # CASE 1: EFFORTLESS -> ZERO AI CALLS
+    # ==========================================
     if avg_buffer >= required_monthly:
         return {
             "status": "effortless",
@@ -237,13 +239,17 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
             "required_monthly": round(required_monthly, 2),
             "monthly_deficit": 0.0,
             "baseline": baseline,
-            "message": f"You have an average buffer of ${avg_buffer:,.2f}/mo. You can fund this ${budget:,.2f} goal without altering your spending!"
+            "tradeoffs": None,  # AI is never invoked
+            "message": f"Your current cash buffer (${avg_buffer:,.2f}/mo) fully covers this goal. You do not need to cut any expenses."
         }
 
     deficit = required_monthly - avg_buffer
     effort_ratio = deficit / avg_dynamic if avg_dynamic > 0 else 1.0
     feasibility_score = max(0.0, min(100.0, (1 - effort_ratio) * 100))
 
+    # ==========================================
+    # CASE 2: ACHIEVABLE -> TARGETED AI CALL
+    # ==========================================
     if feasibility_score >= 65.0:
         ai_plan = generate_ai_tradeoffs(
             deficit=deficit,
@@ -264,7 +270,9 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
             "tradeoffs": ai_plan
         }
 
-    # Low Feasibility: Recalibrate
+    # ==========================================
+    # CASE 3: LOW FEASIBILITY -> RECALIBRATED AI CALL
+    # ==========================================
     zero_sacrifice_budget = avg_buffer * months
     target_70_cut = 0.30 * avg_dynamic
     target_70_budget = (avg_buffer + target_70_cut) * months
@@ -300,6 +308,7 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
         },
         "tradeoffs": ai_plan
     }
+
 if __name__ == "__main__":
     import json
    
