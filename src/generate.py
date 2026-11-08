@@ -24,9 +24,8 @@ except Exception:
 from financial.models import Static_data, Dynamic_data, Salary_data
 
 
-# =====================================================================
-# 1. Database Summaries & Multi-Year Aggregations
-# =====================================================================
+# Database Summaries & Multi-Year Aggregations
+
 def get_live_financial_summary() -> dict:
     """
     Pulls live data directly from SQLite via Django ORM.
@@ -128,9 +127,7 @@ def get_available_periods() -> list[dict]:
     ]
 
 
-# =====================================================================
-# 2. AI Prompt Engine A: Goal-Oriented Behavioral Trade-Offs
-# =====================================================================
+#  AI Prompt Engine A: Goal-Oriented Behavioral Trade-Offs
 def generate_ai_tradeoffs(deficit: float, category_averages: pd.Series, merchant_patterns: pd.DataFrame,
                            goal_price: float = None, months: int = None, is_recalibrated: bool = False) -> dict:
     goal_text = f"${goal_price:,.2f} goal in {months} months" if goal_price and months else "savings target"
@@ -232,9 +229,9 @@ Generate a single valid JSON object strictly matching this schema:
         return default_fallback
 
 
-# =====================================================================
-# 3. AI Prompt Engine B: General Monthly Financial Health Audit
-# =====================================================================
+
+# AI Prompt Engine B: General Monthly Financial Health Audit
+
 def generate_monthly_ai_insights(month_label: str, income: float, static: float, dynamic: float,
                                  category_totals: dict, baseline_dynamic: float) -> dict:
     """
@@ -318,9 +315,9 @@ Generate a JSON response strictly matching this structure:
         return default_fallback
 
 
-# =====================================================================
-# 4. Monthly Finance Analysis Entry Point (Month + Year)
-# =====================================================================
+
+#  Monthly Finance Analysis Entry Point (Month + Year)
+
 def analyze_monthly_finances(year: int, month: int) -> dict:
     """
     Pulls transactions for an exact Year and Month (e.g., year=2024, month=10).
@@ -380,9 +377,8 @@ def analyze_monthly_finances(year: int, month: int) -> dict:
     }
 
 
-# =====================================================================
-# 5. Goal Planning Evaluation Entry Point
-# =====================================================================
+# Goal Planning Evaluation Entry Point
+
 def evaluate_financial_plan(budget: float, months: int) -> dict:
     months = max(1, int(months))
     budget = float(budget)
@@ -477,9 +473,9 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
     }
 
 
-# =====================================================================
-# Standalone CLI Test Verification
-# =====================================================================
+
+# Standalone Test Verification
+
 if __name__ == "__main__":
     print("==================================================")
     print("1. Available Tracked Periods in Database:")

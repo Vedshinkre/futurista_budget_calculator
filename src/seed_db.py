@@ -22,7 +22,7 @@ def seed_database():
     Static_data.objects.all().delete()
     Salary_data.objects.all().delete()
 
-    # 1. Seed Dynamic Spending
+    # Seed Dynamic Spending
     if dynamic_csv.exists():
         df_dyn = pd.read_csv(dynamic_csv)
         records = [
@@ -38,7 +38,7 @@ def seed_database():
         Dynamic_data.objects.bulk_create(records)
         print(f"Loaded {len(records)} dynamic records into database.")
 
-    # 2. Seed Static Bills
+    # Seed Static Bills
     if static_csv.exists():
         df_stat = pd.read_csv(static_csv)
         records = [
@@ -54,7 +54,7 @@ def seed_database():
         Static_data.objects.bulk_create(records)
         print(f"Loaded {len(records)} static records into database.")
 
-    # 3. Seed Income / Paychecks
+    # Seed Income / Paychecks
     if paycheck_csv.exists():
         df_inc = pd.read_csv(paycheck_csv)
         records = [

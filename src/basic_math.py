@@ -10,9 +10,9 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 LOCAL_AI_PIPELINE = None
 
 
-# ==========================================
-# 0. Helper Functions (Deterministic Math & Rules)
-# ==========================================
+
+# Helper Functions
+
 def freq_words(monthly_count):
     """Converts a monthly transaction count into natural descriptive language."""
     if monthly_count >= 10:
@@ -80,9 +80,9 @@ def fallback_template(targets, deficit, goal_info):
     )
 
 
-# ==========================================
-# 1. Local AI Coaching Engine
-# ==========================================
+
+# Local AI Coaching Engine
+
 def generate_ai_tradeoffs(deficit, category_averages, merchant_patterns, total_months, goal_price=None, months=None):
     """
     Passes pre-computed targets into Qwen2.5-0.5B using a one-shot chat prompt.
@@ -180,9 +180,9 @@ def generate_ai_tradeoffs(deficit, category_averages, merchant_patterns, total_m
     return response_text
 
 
-# ==========================================
-# 2. Path Management & Data Loading
-# ==========================================
+
+# Path Management & Data Loading
+
 current_code_path = Path(__file__).resolve().parent
 project_path = current_code_path.parent
 
@@ -199,9 +199,9 @@ dynamic_df = pd.read_csv(dynamic_path)
 static_df = pd.read_csv(static_path)
 income_df = pd.read_csv(income_path)
 
-# ==========================================
-# 3. Monthly Cash Flow & Sinking Fund Engine
-# ==========================================
+
+# Monthly Cash Flow & Sinking Fund Engine
+
 monthly_income = income_df.groupby("Month")["Amount"].sum()
 monthly_static = static_df.groupby("Month")["Amount"].sum()
 monthly_dynamic = dynamic_df.groupby("Month")["Amount"].sum()
@@ -241,9 +241,9 @@ monthly_summary["remaining_funds"] = monthly_summary["income"] - (
     + monthly_summary["actual_sinking_fund"]
 )
 
-# ==========================================
-# 4. Dynamic Aggregations for LLM Context
-# ==========================================
+
+# Dynamic Aggregations for LLM Context
+
 total_months = len(monthly_summary)
 
 category_monthly_avg = (
@@ -261,9 +261,9 @@ frequent_merchants = (
     .reset_index()
 )
 
-# ==========================================
-# 5. User Goal & Historical Baselines
-# ==========================================
+
+# User Goal & Historical Baselines
+
 trip_target_price = 18000.0
 months_until_trip = 12
 required_monthly = trip_target_price / months_until_trip
@@ -284,9 +284,9 @@ print(f"Avg 5% Sinking Fund Saved: ${avg_sinking_fund:,.2f}")
 print(f"Avg Remaining Buffer:      ${avg_buffer:,.2f}")
 print("=" * 55)
 
-# ==========================================
-# 6. Feasibility Evaluation & LLM Call
-# ==========================================
+
+# Feasibility Evaluation & LLM Call
+
 print(f"\nGOAL: ${trip_target_price:.2f} trip in {months_until_trip} months")
 print(f"Required Monthly Allocation: ${required_monthly:.2f}/month")
 
