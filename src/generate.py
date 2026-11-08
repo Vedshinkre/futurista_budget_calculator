@@ -1,3 +1,4 @@
+import calendar
 import json
 import math
 import os
@@ -12,7 +13,7 @@ load_dotenv()
 BLABLADOR_API_KEY = os.getenv("BLABLADOR_API_KEY")
 BLABLADOR_BASE_URL = "https://api.blablador.fz-juelich.de/v1"
 
-# Ensure Django is initialized if run independently
+# Ensure Django environment is configured when run standalone
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "hackathon_project.settings")
 import django
 try:
@@ -23,31 +24,37 @@ except Exception:
 from financial.models import Static_data, Dynamic_data, Salary_data
 
 
-# ==========================================
-# 1. Dynamic Data Fetcher (From SQLite Database)
-# ==========================================
-def get_live_financial_summary():
+# =====================================================================
+# 1. Database Summaries & Multi-Year Aggregations
+# =====================================================================
+def get_live_financial_summary() -> dict:
     """
-    Pulls real-time data directly from Django models.
-    Converts Decimal values to float and groups by Month.
+    Pulls live data directly from SQLite via Django ORM.
+    Groups by exact Year-Month (YYYY-MM) derived from DateField
+    to avoid multi-year month collisions (e.g., Oct 2023 vs Oct 2024).
     """
     dyn_records = list(Dynamic_data.objects.all().values("date", "description", "amount", "category", "month"))
     stat_records = list(Static_data.objects.all().values("date", "description", "amount", "category", "month"))
     inc_records = list(Salary_data.objects.all().values("date", "description", "amount", "category", "month"))
 
-    dynamic_df = pd.DataFrame(dyn_records)
-    static_df = pd.DataFrame(stat_records)
-    income_df = pd.DataFrame(inc_records)
+    dyn_df = pd.DataFrame(dyn_records)
+    stat_df = pd.DataFrame(stat_records)
+    inc_df = pd.DataFrame(inc_records)
 
-    # Standardize column types
-    for df in [dynamic_df, static_df, income_df]:
-        if not df.empty and "amount" in df.columns:
-            df["amount"] = df["amount"].astype(float)
+    # Standardize amounts and extract calendar periods (YYYY-MM)
+    for df in [dyn_df, stat_df, inc_df]:
+        if not df.empty:
+            if "amount" in df.columns:
+                df["amount"] = df["amount"].astype(float)
+            if "date" in df.columns:
+                df["date_dt"] = pd.to_datetime(df["date"], errors="coerce")
+                df["period"] = df["date_dt"].dt.strftime("%Y-%m").fillna(df["month"])
+            else:
+                df["period"] = df["month"]
 
-    # Monthly aggregations
-    monthly_income = income_df.groupby("month")["amount"].sum() if not income_df.empty else pd.Series(dtype=float)
-    monthly_static = static_df.groupby("month")["amount"].sum() if not static_df.empty else pd.Series(dtype=float)
-    monthly_dynamic = dynamic_df.groupby("month")["amount"].sum() if not dynamic_df.empty else pd.Series(dtype=float)
+    monthly_income = inc_df.groupby("period")["amount"].sum() if not inc_df.empty else pd.Series(dtype=float)
+    monthly_static = stat_df.groupby("period")["amount"].sum() if not stat_df.empty else pd.Series(dtype=float)
+    monthly_dynamic = dyn_df.groupby("period")["amount"].sum() if not dyn_df.empty else pd.Series(dtype=float)
 
     monthly_summary = pd.DataFrame({
         "income": monthly_income,
@@ -74,18 +81,18 @@ def get_live_financial_summary():
     total_months = max(1, len(monthly_summary))
 
     category_monthly_avg = (
-        (dynamic_df.groupby("category")["amount"].sum() / total_months)
+        (dyn_df.groupby("category")["amount"].sum() / total_months)
         .round(2)
         .sort_values(ascending=False)
-    ) if not dynamic_df.empty else pd.Series(dtype=float)
+    ) if not dyn_df.empty else pd.Series(dtype=float)
 
     frequent_merchants = (
-        dynamic_df.groupby(["category", "description"])["amount"]
+        dyn_df.groupby(["category", "description"])["amount"]
         .agg(total_spent="sum", frequency="count")
         .sort_values(by="frequency", ascending=False)
         .head(10)
         .reset_index()
-    ) if not dynamic_df.empty else pd.DataFrame(columns=["category", "description", "total_spent", "frequency"])
+    ) if not dyn_df.empty else pd.DataFrame(columns=["category", "description", "total_spent", "frequency"])
 
     avg_income = float(monthly_summary["income"].mean()) if not monthly_summary.empty else 0.0
     avg_static = float(monthly_summary["static"].mean()) if not monthly_summary.empty else 0.0
@@ -104,11 +111,29 @@ def get_live_financial_summary():
     }
 
 
-# ==========================================
-# 2. AI Coaching Engine
-# ==========================================
-def generate_ai_tradeoffs(deficit, category_averages, merchant_patterns, goal_price=None, months=None, is_recalibrated=False):
-    goal_text = f"${goal_price:,.2f} trip in {months} months" if goal_price and months else "savings goal"
+def get_available_periods() -> list[dict]:
+    """
+    Returns all unique Year-Month combinations available across records
+    sorted in descending order for frontend dropdown selectors.
+    """
+    records = Dynamic_data.objects.dates("date", "month", order="DESC")
+    return [
+        {
+            "year": d.year,
+            "month": d.month,
+            "label": f"{calendar.month_name[d.month]} {d.year}",
+            "value": f"{d.year}-{d.month:02d}"
+        }
+        for d in records
+    ]
+
+
+# =====================================================================
+# 2. AI Prompt Engine A: Goal-Oriented Behavioral Trade-Offs
+# =====================================================================
+def generate_ai_tradeoffs(deficit: float, category_averages: pd.Series, merchant_patterns: pd.DataFrame,
+                           goal_price: float = None, months: int = None, is_recalibrated: bool = False) -> dict:
+    goal_text = f"${goal_price:,.2f} goal in {months} months" if goal_price and months else "savings target"
 
     default_fallback = {
         "deficit": round(deficit, 2),
@@ -203,13 +228,161 @@ Generate a single valid JSON object strictly matching this schema:
         return json.loads(content)
 
     except Exception as e:
-        print(f"[Warning] Blablador JSON generation failed ({e}). Returning fallback schema.")
+        print(f"[Warning] Blablador goal trade-off generation failed ({e}). Returning fallback.")
         return default_fallback
 
 
-# ==========================================
-# 3. Main Live Evaluation Function
-# ==========================================
+# =====================================================================
+# 3. AI Prompt Engine B: General Monthly Financial Health Audit
+# =====================================================================
+def generate_monthly_ai_insights(month_label: str, income: float, static: float, dynamic: float,
+                                 category_totals: dict, baseline_dynamic: float) -> dict:
+    """
+    Audits a single month's finances against historical averages to detect
+    lifestyle creep and unallocated cash opportunities.
+    """
+    net_savings = income - static - dynamic
+
+    top_cat = max(category_totals, key=category_totals.get) if category_totals else "Discretionary"
+    top_cat_amt = category_totals.get(top_cat, 0.0)
+
+    default_fallback = {
+        "health_grade": "B" if net_savings >= 0 else "D",
+        "spending_diagnosis": f"In {month_label}, you earned ${income:,.2f} and spent ${static + dynamic:,.2f}, leaving ${net_savings:,.2f} in net savings.",
+        "flagged_categories": [
+            {
+                "category": top_cat,
+                "comment": f"Highest discretionary spend this month at ${top_cat_amt:,.2f}.",
+                "tip": "Set a weekly discretionary envelope to keep non-essential purchases controlled."
+            }
+        ],
+        "wealth_building_tip": "Route remaining unallocated surplus directly into a dedicated high-yield sinking fund."
+    }
+
+    if not BLABLADOR_API_KEY:
+        return default_fallback
+
+    client = OpenAI(base_url=BLABLADOR_BASE_URL, api_key=BLABLADOR_API_KEY)
+
+    system_prompt = (
+        "You are an expert personal finance auditor. Analyze a user's monthly spending, "
+        "compare it to their baseline, identify lifestyle leaks, and provide actionable tips. "
+        "Return ONLY a raw JSON object matching the requested schema."
+    )
+
+    user_prompt = f"""
+MONTH UNDER REVIEW: {month_label}
+- Net Income: ${income:,.2f}
+- Static Bills: ${static:,.2f}
+- Discretionary Spend: ${dynamic:,.2f} (Historical Baseline: ${baseline_dynamic:,.2f})
+- Net Cash Saved: ${net_savings:,.2f}
+
+MONTHLY DISCRETIONARY BREAKDOWN:
+{json.dumps(category_totals, indent=2)}
+
+Generate a JSON response strictly matching this structure:
+{{
+  "health_grade": "<A, B, C, or D based on savings rate>",
+  "spending_diagnosis": "<2-3 sentences evaluating how this month went compared to baseline>",
+  "flagged_categories": [
+    {{
+      "category": "<Category Name with highest or unusual spend>",
+      "comment": "<Why this stands out>",
+      "tip": "<Actionable way to trim it next month>"
+    }}
+  ],
+  "wealth_building_tip": "<1 concrete suggestion on what to do with leftover cash>"
+}}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="alias-fast",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=1000,
+            temperature=0.3
+        )
+
+        content = response.choices[0].message.content or ""
+        json_match = re.search(r"\{.*\}", content, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(0))
+
+        return json.loads(content)
+
+    except Exception as e:
+        print(f"[Warning] Blablador monthly health audit failed ({e}). Returning fallback.")
+        return default_fallback
+
+
+# =====================================================================
+# 4. Monthly Finance Analysis Entry Point (Month + Year)
+# =====================================================================
+def analyze_monthly_finances(year: int, month: int) -> dict:
+    """
+    Pulls transactions for an exact Year and Month (e.g., year=2024, month=10).
+    Aggregates spend, converts Decimals to float, and runs the health audit.
+    """
+    month_label = f"{calendar.month_name[month]} {year}"
+
+    dyn_records = list(Dynamic_data.objects.filter(date__year=year, date__month=month).values())
+    stat_records = list(Static_data.objects.filter(date__year=year, date__month=month).values())
+    inc_records = list(Salary_data.objects.filter(date__year=year, date__month=month).values())
+
+    dyn_df = pd.DataFrame(dyn_records)
+    stat_df = pd.DataFrame(stat_records)
+    inc_df = pd.DataFrame(inc_records)
+
+    # Cast Decimal columns to float
+    for df in [dyn_df, stat_df, inc_df]:
+        if not df.empty and "amount" in df.columns:
+            df["amount"] = df["amount"].astype(float)
+
+    total_income = float(inc_df["amount"].sum()) if not inc_df.empty else 0.0
+    total_static = float(stat_df["amount"].sum()) if not stat_df.empty else 0.0
+    total_dynamic = float(dyn_df["amount"].sum()) if not dyn_df.empty else 0.0
+
+    total_spent = total_static + total_dynamic
+    net_savings = total_income - total_spent
+    savings_rate = (net_savings / total_income * 100) if total_income > 0 else 0.0
+
+    category_totals = (
+        dyn_df.groupby("category")["amount"].sum().round(2).to_dict()
+        if not dyn_df.empty else {}
+    )
+
+    baseline_metrics = get_live_financial_summary()
+    baseline_dynamic = baseline_metrics["avg_dynamic"]
+
+    ai_audit = generate_monthly_ai_insights(
+        month_label=month_label,
+        income=total_income,
+        static=total_static,
+        dynamic=total_dynamic,
+        category_totals=category_totals,
+        baseline_dynamic=baseline_dynamic
+    )
+
+    return {
+        "period": month_label,
+        "year": year,
+        "month": month,
+        "income": round(total_income, 2),
+        "static_burn": round(total_static, 2),
+        "dynamic_spend": round(total_dynamic, 2),
+        "net_savings": round(net_savings, 2),
+        "savings_rate": round(savings_rate, 1),
+        "categories": category_totals,
+        "ai_audit": ai_audit
+    }
+
+
+# =====================================================================
+# 5. Goal Planning Evaluation Entry Point
+# =====================================================================
 def evaluate_financial_plan(budget: float, months: int) -> dict:
     months = max(1, int(months))
     budget = float(budget)
@@ -227,9 +400,7 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
         "buffer": round(avg_buffer, 2)
     }
 
-    # ==========================================
-    # CASE 1: EFFORTLESS -> ZERO AI CALLS
-    # ==========================================
+    # Case 1: Effortless -> Bypasses AI completely
     if avg_buffer >= required_monthly:
         return {
             "status": "effortless",
@@ -239,17 +410,15 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
             "required_monthly": round(required_monthly, 2),
             "monthly_deficit": 0.0,
             "baseline": baseline,
-            "tradeoffs": None,  # AI is never invoked
-            "message": f"Your current cash buffer (${avg_buffer:,.2f}/mo) fully covers this goal. You do not need to cut any expenses."
+            "tradeoffs": None,
+            "message": f"Your monthly buffer (${avg_buffer:,.2f}) completely covers this goal. No cuts required."
         }
 
     deficit = required_monthly - avg_buffer
     effort_ratio = deficit / avg_dynamic if avg_dynamic > 0 else 1.0
     feasibility_score = max(0.0, min(100.0, (1 - effort_ratio) * 100))
 
-    # ==========================================
-    # CASE 2: ACHIEVABLE -> TARGETED AI CALL
-    # ==========================================
+    # Case 2: Achievable -> Targeted AI Trade-Off Plan
     if feasibility_score >= 65.0:
         ai_plan = generate_ai_tradeoffs(
             deficit=deficit,
@@ -270,9 +439,7 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
             "tradeoffs": ai_plan
         }
 
-    # ==========================================
-    # CASE 3: LOW FEASIBILITY -> RECALIBRATED AI CALL
-    # ==========================================
+    # Case 3: Low Feasibility -> Recalibrated Budget Tiers & AI Plan
     zero_sacrifice_budget = avg_buffer * months
     target_70_cut = 0.30 * avg_dynamic
     target_70_budget = (avg_buffer + target_70_cut) * months
@@ -309,11 +476,36 @@ def evaluate_financial_plan(budget: float, months: int) -> dict:
         "tradeoffs": ai_plan
     }
 
+
+# =====================================================================
+# Standalone CLI Test Verification
+# =====================================================================
 if __name__ == "__main__":
-    import json
-   
-    print("Evaluating financial plan...")
-    result = evaluate_financial_plan(budget=35000.0, months=12)
-    
-   
-    print(json.dumps(result, indent=4))
+    print("==================================================")
+    print("1. Available Tracked Periods in Database:")
+    print("==================================================")
+    periods = get_available_periods()
+    for p in periods[:6]:
+        print(f"  • {p['label']} ({p['value']})")
+
+    print("\n==================================================")
+    print("2. Testing Savings Goal Plan ($18,000 / 12 mo):")
+    print("==================================================")
+    goal_test = evaluate_financial_plan(budget=18000.0, months=12)
+    print(f"Status: {goal_test['status']} | Feasibility: {goal_test['feasibility_score']}%")
+    if goal_test.get("tradeoffs"):
+        print(f"AI Cut Needed: ${goal_test['tradeoffs']['deficit']}/mo")
+        print(f"Categories Flagged: {[c['category'] for c in goal_test['tradeoffs']['top_categories']]}")
+
+    print("\n==================================================")
+    print("3. Testing Monthly Health Audit (Most Recent Month):")
+    print("==================================================")
+    if periods:
+        sample = periods[0]
+        audit_test = analyze_monthly_finances(year=sample["year"], month=sample["month"])
+        print(f"Period: {audit_test['period']}")
+        print(f"Net Income: ${audit_test['income']} | Dynamic Spent: ${audit_test['dynamic_spend']}")
+        print(f"AI Grade: {audit_test['ai_audit']['health_grade']}")
+        print(f"Diagnosis: {audit_test['ai_audit']['spending_diagnosis']}")
+    else:
+        print("No transactions currently found in SQLite database. Seed the database first.")
