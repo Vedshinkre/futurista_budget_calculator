@@ -163,10 +163,3 @@ The application requires the following environment variables:
 | `DJANGO_SECRET_KEY` | Django application's secret key |
 | `DEBUG` | Enables or disables Django debug mode |
 
-**Important:** Never commit your `.env` file or expose your API keys and Django secret key in a public repository.
-
----
-
-## License
-
-Add your preferred license information here (for example, MIT License).
