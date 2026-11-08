@@ -15,14 +15,13 @@
             <h1 class="text-4xl font-extrabold text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-300">
                 FUTURISTA
             </h1>
-            <p class="text-slate-400 text-sm">Select an action to continue</p>
         </div>
 
         <div class="space-y-4">
             <!-- Option 1: AI Planner -->
             <a href="{% url 'finance_form' %}" class="block w-full bg-slate-900 border border-slate-700 hover:border-indigo-500 rounded-xl p-5 transition-all hover:scale-[1.02] group">
-                <h3 class="text-lg font-bold text-white group-hover:text-indigo-400">1. Generate AI Planner</h3>
-                <p class="text-xs text-slate-400 mt-1">Set savings goals and calculate feasibility tradeoffs.</p>
+                <h3 class="text-lg font-bold text-white group-hover:text-indigo-400">1. Budget Planner</h3>
+                <p class="text-xs text-slate-400 mt-1">Set savings goals and calculate their feasibility.</p>
             </a>
 
             <!-- Option 2: Log Transaction -->
@@ -33,8 +32,8 @@
 
             <!-- Option 3: Monthly Reports -->
             <a href="{% url 'report_input' %}" class="block w-full bg-slate-900 border border-slate-700 hover:border-amber-500 rounded-xl p-5 transition-all hover:scale-[1.02] group">
-                <h3 class="text-lg font-bold text-white group-hover:text-amber-400">3. Monthly Audit Reports</h3>
-                <p class="text-xs text-slate-400 mt-1">View historical breakdowns, pie charts, and AI reviews.</p>
+                <h3 class="text-lg font-bold text-white group-hover:text-amber-400">3. Monthly Expense Reports</h3>
+                <p class="text-xs text-slate-400 mt-1">Monthly spending Analysis with AI diagnosis.</p>
             </a>
         </div>
     </div>
