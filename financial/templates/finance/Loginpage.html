@@ -6,34 +6,66 @@
     <title>Futurista | Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>body { font-family: 'Inter', sans-serif; }</style>
-</head>
-<body class="bg-slate-950 text-slate-200 min-h-screen py-10 px-4 flex items-center justify-center">
+    {% load static %}
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Background Atmospheric Fade Setup */
+        .hero-bg {
+            background-image: 
+                linear-gradient(to bottom, rgba(3, 7, 18, 0.85), rgba(3, 7, 18, 0.95)),
+                radial-gradient(circle at center, rgba(15, 23, 42, 0.6) 0%, rgba(3, 7, 18, 0.9) 100%),
+                url("/static/back.jpg");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
 
-    <div class="max-w-md w-full space-y-8">
-        <div class="text-center space-y-2">
-            <h1 class="text-4xl font-extrabold text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-300">
-                FUTURISTA
-            </h1>
+        /* Seamless Edge Blending (Vignette Mask) */
+        .blend-logo {
+            -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 95%);
+            mask-image: radial-gradient(circle, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 95%);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen py-10 px-4 flex items-center justify-center hero-bg">
+
+  
+    <div class="max-w-3xl w-full space-y-6 bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-8 md:p-10 rounded-3xl shadow-2xl">
+
+        <!-- Seamless Blended Logo Mark -->
+        <div class="text-center flex flex-col items-center">
+            <div class="w-full max-h-44 overflow-hidden flex justify-center -my-4">
+                <img src="/static/back.jpg" alt="Futurista Logo" class="w-full h-auto object-cover blend-logo opacity-90">
+            </div>
         </div>
 
-        <div class="space-y-4">
+        <div class="space-y-4 pt-1">
             <!-- Option 1: AI Planner -->
-            <a href="{% url 'finance_form' %}" class="block w-full bg-slate-900 border border-slate-700 hover:border-indigo-500 rounded-xl p-5 transition-all hover:scale-[1.02] group">
-                <h3 class="text-lg font-bold text-white group-hover:text-indigo-400">1. Budget Planner</h3>
-                <p class="text-xs text-slate-400 mt-1">Set savings goals and calculate their feasibility.</p>
+            <a href="{% url 'finance_form' %}" class="block w-full bg-slate-900/80 border border-slate-700/80 hover:border-indigo-500/80 rounded-2xl p-5 transition-all hover:scale-[1.02] group shadow-lg">
+                <h3 class="text-base font-bold text-white group-hover:text-indigo-400 flex items-center justify-between">
+                    <span>1. Generate AI Planner</span>
+                    <span class="text-xs text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                </h3>
+                <p class="text-xs text-slate-400 mt-1">Set savings goals and calculate feasibility tradeoffs.</p>
             </a>
 
             <!-- Option 2: Log Transaction -->
-            <a href="{% url 'log_transaction' %}" class="block w-full bg-slate-900 border border-slate-700 hover:border-emerald-500 rounded-xl p-5 transition-all hover:scale-[1.02] group">
-                <h3 class="text-lg font-bold text-white group-hover:text-emerald-400">2. Log New Transaction</h3>
+            <a href="{% url 'log_transaction' %}" class="block w-full bg-slate-900/80 border border-slate-700/80 hover:border-emerald-500/80 rounded-2xl p-5 transition-all hover:scale-[1.02] group shadow-lg">
+                <h3 class="text-base font-bold text-white group-hover:text-emerald-400 flex items-center justify-between">
+                    <span>2. Log New Transaction</span>
+                    <span class="text-xs text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                </h3>
                 <p class="text-xs text-slate-400 mt-1">Quick-add income or expenses to your database.</p>
             </a>
 
             <!-- Option 3: Monthly Reports -->
-            <a href="{% url 'report_input' %}" class="block w-full bg-slate-900 border border-slate-700 hover:border-amber-500 rounded-xl p-5 transition-all hover:scale-[1.02] group">
-                <h3 class="text-lg font-bold text-white group-hover:text-amber-400">3. Monthly Expense Reports</h3>
-                <p class="text-xs text-slate-400 mt-1">Monthly spending Analysis with AI diagnosis.</p>
+            <a href="{% url 'report_input' %}" class="block w-full bg-slate-900/80 border border-slate-700/80 hover:border-amber-500/80 rounded-2xl p-5 transition-all hover:scale-[1.02] group shadow-lg">
+                <h3 class="text-base font-bold text-white group-hover:text-amber-400 flex items-center justify-between">
+                    <span>3. Monthly Audit Reports</span>
+                    <span class="text-xs text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                </h3>
+                <p class="text-xs text-slate-400 mt-1">View historical breakdowns, pie charts, and AI reviews.</p>
             </a>
         </div>
     </div>

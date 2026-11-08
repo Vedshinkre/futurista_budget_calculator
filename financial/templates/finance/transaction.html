@@ -6,9 +6,23 @@
     <title>Futurista | Log Transaction</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>body { font-family: 'Inter', sans-serif; }</style>
+    {% load static %}
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Background Logo Fade Setup */
+        .hero-bg {
+            background-image: 
+                linear-gradient(to bottom, rgba(3, 7, 18, 0.85), rgba(3, 7, 18, 0.95)),
+                radial-gradient(circle at center, rgba(15, 23, 42, 0.6) 0%, rgba(3, 7, 18, 0.9) 100%),
+                url("{% static 'back.jpg' %}");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+    </style>
 </head>
-<body class="bg-slate-950 text-slate-200 min-h-screen py-10 px-4 flex items-center justify-center">
+<body class="bg-slate-950 text-slate-200 min-h-screen py-10 px-4 flex items-center justify-center hero-bg">
 
     <div class="max-w-xl w-full space-y-6">
         <div class="text-center space-y-2">
@@ -22,7 +36,7 @@
             </div>
         {% endif %}
 
-        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8">
+        <div class="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8">
             <form method="POST" action="" class="space-y-5">
                 {% csrf_token %}
                 <div class="grid grid-cols-2 gap-3">
