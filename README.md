@@ -104,7 +104,6 @@ Create a `.env` file in the project's root directory:
 
 ```ini
 BLABLADOR_API_KEY=your_blablador_api_key_here
-DJANGO_SECRET_KEY=your_django_secret_key
 DEBUG=True
 ```
 
